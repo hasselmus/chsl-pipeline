@@ -196,6 +196,14 @@ def main(argv=None):
     args = p.parse_args(argv)
     raw = read_raw(args.institutional)
     rows = source_rows(raw)
+    raw_citations = raw.rename(columns={col: ALIASES[normal(col)] for col in raw
+                                       if normal(col) in ALIASES})
+    if "citation" in raw_citations:
+        references = sorted(set(raw_citations["citation"].dropna().astype(str)) - {""})
+        crosswalk = {"CIT_" + hashlib.sha256(c.encode()).hexdigest()[:14]: c for c in references}
+        archive = Path("data/raw/citation_crosswalk.json")
+        archive.parent.mkdir(parents=True, exist_ok=True)
+        archive.write_text(json.dumps(crosswalk, ensure_ascii=False, indent=2))
     basins = pd.read_csv(args.basins)
     terms = pd.read_csv(args.terminations) if args.terminations else None
     translated = anonymise(rows, basins, terms)
