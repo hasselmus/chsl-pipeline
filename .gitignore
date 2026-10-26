@@ -4,7 +4,6 @@ __pycache__/
 .venv/
 dist/
 *.egg-info/
-data/raw/
-data/processed/
+data/
 results/
 .coverage
