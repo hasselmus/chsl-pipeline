@@ -101,7 +101,11 @@ def build_vectors(df: pd.DataFrame, forcing: pd.DataFrame | None = None,
             extra["chsl_version"] = VERSION
             for source in (forcing, regional):
                 if source is not None and not source.empty:
-                    extra = extra.merge(source, on=["basin_id", "t_obs"],
+                    allowed = (["basin_id", "t_obs"] +
+                               [key for key in source.columns if key in EXOGENOUS + REGIONAL
+                                or any(key == f"{r}_{suffix}" for r in REGIONAL
+                                       for suffix in ("low", "high", "disputed_flag", "grid_cells"))])
+                    extra = extra.merge(source[allowed], on=["basin_id", "t_obs"],
                                         how="left", validate="one_to_one")
             df = pd.concat([df, extra], ignore_index=True)
     for field in REGIONAL:
