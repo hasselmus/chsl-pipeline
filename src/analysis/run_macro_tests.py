@@ -53,7 +53,8 @@ def fit_logit(df: pd.DataFrame, response: str, terms: list[str],
               test: str, model: str, draw: int) -> list[dict]:
     cols = [response, "n0_id", "basin_id"] + terms
     sub = df[cols].replace([np.inf, -np.inf], np.nan).dropna()
-    n, events = len(sub), int(sub[response].sum()) if n else 0
+    n = len(sub)
+    events = int(sub[response].sum()) if n else 0
     k = len(terms) + 1
     if n < max(20, 5 * k) or events < 3 or (n - events) < 3:
         return [{"draw": draw, "test": test, "model": model, "family": "panel_logit",
