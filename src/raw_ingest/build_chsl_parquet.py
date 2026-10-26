@@ -52,38 +52,42 @@ def to_year(value: object) -> int:
 
 def numeric_bounds(value: object, name: str,
                    low: object = None, high: object = None) -> tuple[float,float,bool]:
-    missing = {"", "unknown", "not known", "uncoded", "na", "nan", "none", "?"}
     s = "" if pd.isna(value) else str(value).strip().lower()
-    if s in missing and pd.isna(low) and pd.isna(high):
-        return np.nan, np.nan, False
     disputed = "?" in s or "disput" in s or "uncertain" in s
+    if pd.notna(low) or pd.notna(high):
+        if pd.isna(low) or pd.isna(high):
+            return np.nan, np.nan, True
+        a, b = float(low), float(high)
+        if a > b:
+            raise ValueError("CHSL-v1 source bounds are reversed")
+        return a, b, disputed
     if name == "a_claims_abstraction":
-        forms = {"none": 0, "no medium": 0, "barter": 0, "bullion": 1,
+        forms = {"none": 0, "no formal medium": 0, "barter": 0, "bullion": 1,
                  "articles": 1, "coin": 2, "coinage": 2, "paper": 3,
                  "paper currency": 3, "credit": 4, "state debt": 4}
-        if s in forms and not (pd.notna(low) or pd.notna(high)):
+        if s in forms:
             return float(forms[s]), float(forms[s]), disputed
-        if s in ("yes", "present", "true", "1") and pd.isna(low) and pd.isna(high):
+        if s in ("yes", "present", "true"):
             return np.nan, np.nan, True
+    missing = {"", "unknown", "not known", "uncoded", "na", "nan", "?", "not applicable"}
+    if s in missing:
+        return np.nan, np.nan, False
     if name != "a_claims_abstraction":
         binary = {"yes": 1, "present": 1, "true": 1, "no": 0,
                   "absent": 0, "false": 0}
         if s in binary:
             return float(binary[s]), float(binary[s]), disputed
-    if pd.notna(low) or pd.notna(high):
-        if pd.isna(low) or pd.isna(high):
-            return np.nan, np.nan, True
-        return float(low), float(high), disputed
-    parts = re.findall(r"(?<![\d])[-+]?\d+(?:\.\d+)?", s)
-    if len(parts) == 2 and ("-" in s or "," in s or "to" in s or "[" in s):
-        a, b = map(float, parts)
-        return min(a,b), max(a,b), disputed
-    if len(parts) == 1 and s.replace(" ", "") in {
-            parts[0], "+" + parts[0], "-" + parts[0]}:
-        val = float(parts[0])
-        if s.startswith("-"):
-            val = -val
-        return val, val, disputed
+    # Brackets are compatible states, not estimated midpoints.
+    bracket = re.fullmatch(r"\[\s*([-+]?\d+(?:\.\d+)?)\s*,\s*([-+]?\d+(?:\.\d+)?)\s*\]\??", s)
+    interval = re.fullmatch(r"([-+]?\d+(?:\.\d+)?)\s*(?:to|–|-)\s*([-+]?\d+(?:\.\d+)?)\??", s)
+    match = bracket or interval
+    if match:
+        a, b = float(match.group(1)), float(match.group(2))
+        return min(a, b), max(a, b), disputed
+    point = re.fullmatch(r"([-+]?\d+(?:\.\d+)?)\??", s)
+    if point:
+        number = float(point.group(1))
+        return number, number, disputed
     return np.nan, np.nan, True
 
 def rename_meta(frame: pd.DataFrame) -> pd.DataFrame:
@@ -107,7 +111,7 @@ def source_rows(raw: pd.DataFrame) -> pd.DataFrame:
         region = str(item["raw_region"])
         if not label.strip() or not region.strip():
             raise ValueError("CHSL-v1 missing configuration/geography mapping")
-        citation = str(item.get("citation", "")).strip()
+        citation = str(item.get("citation")).strip() if pd.notna(item.get("citation")) else ""
         cit_id = "CIT_" + hashlib.sha256(citation.encode()).hexdigest()[:14] if citation else ""
         if "variable" in raw and "value" in raw:
             pairs = [(item["variable"], item["value"])]
@@ -125,7 +129,8 @@ def source_rows(raw: pd.DataFrame) -> pd.DataFrame:
                 continue
             rows.append({"raw_region": region, "n0_label": label, "t_start": start,
                          "t_end": end, "target": target, "low": low, "high": high,
-                         "disputed": disputed or bool(item.get("disputed", False)),
+                         "disputed": disputed or str(item.get("disputed", "")).strip().lower() in
+                         ("true", "yes", "1", "disputed"),
                          "citation_ref": cit_id})
     if not rows:
         raise ValueError("CHSL-v1 found no admissible disaggregated observations; review raw mapping")
