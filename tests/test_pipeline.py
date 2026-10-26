@@ -108,20 +108,27 @@ def test_boundary_rejects_external_columns():
 
 
 def test_lexical_quarantine_on_tracked_project_files():
+    # Check version-controlled project files only, not installed dependencies.
+    import subprocess
     root = Path(__file__).resolve().parents[1]
     raw_map = json.loads((root / "src/raw_ingest/quarantine_map.json").read_text())
-    patterns = [re.compile(r"(?<![a-z0-9])" + re.escape(term) + r"(?![a-z0-9])",re.I)
+    patterns = [re.compile(r"(?<![a-z0-9])" + re.escape(term) + r"(?![a-z0-9])", re.I)
                 for term in raw_map["prohibited_export_tokens"]]
-    for item in root.rglob("*"):
-        if not item.is_file() or item.suffix not in {".py",".md",".json",".toml",".yml",".yaml"}:
+    tracked = subprocess.check_output(
+        ["git", "-C", str(root), "ls-files", "--cached", "-z"]
+    ).split(b"\0")
+    for entry in tracked:
+        if not entry:
             continue
-        if "raw_ingest" in item.parts or ".pytest_cache" in item.parts:
+        relative = Path(entry.decode("utf-8", errors="surrogateescape"))
+        item = root / relative
+        if not item.is_file() or item.suffix not in {".py", ".md", ".json", ".toml", ".yml", ".yaml"}:
             continue
-        if ".git" in item.parts:
+        if relative.parts[:2] == ("src", "raw_ingest"):
             continue
-        text = item.read_text(errors="ignore")
+        text = item.read_text(encoding="utf-8", errors="replace")
         leaked = [p.pattern for p in patterns if p.search(text)]
-        assert not leaked, f"CHSL-v1 quarantine failed: {item.relative_to(root)}"
+        assert not leaked, f"CHSL-v1 quarantine failed: {relative}"
 
 
 def test_historical_bounds_parser():
