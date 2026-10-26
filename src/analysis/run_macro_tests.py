@@ -130,18 +130,22 @@ def event_study(frame: pd.DataFrame, draw: int) -> list[dict]:
         return [{"draw": draw, "test": "T3", "model": "pre_termination", "family": "event_study",
                  "term": "", "status": type(error).__name__, "n": len(event)}]
 
-def decoupling_audit(frame: pd.DataFrame, draw: int) -> list[dict]:
+def decoupling_audit(frame: pd.DataFrame, full_data: pd.DataFrame, draw: int) -> list[dict]:
     rows = []
     for name, g in frame[frame["sigma_draw"].notna()].groupby("n0_id"):
         sigma = int(g["sigma_draw"].iloc[0])
+        basin = str(g["basin_id"].iloc[0])
         before = g[g["t_obs"] < sigma].sort_values("t_obs")
-        after = g[g["t_obs"] >= sigma].sort_values("t_obs")
+        regional = full_data[full_data["basin_id"] == basin].drop_duplicates("t_obs")
+        regional = regional.sort_values("t_obs")
+        pre_regional = regional[regional["t_obs"] < sigma]
+        after = regional[regional["t_obs"] >= sigma]
         row = {"draw": draw, "n0_id": name, "basin_id": str(g["basin_id"].iloc[0]),
                "sigma_draw": sigma,
                "admin_last_pre": float(before["b_admin_pop"].dropna().iloc[-1])
                                  if before["b_admin_pop"].notna().any() else np.nan,
-               "regional_last_pre": float(before["b_regional_hyde_pop"].dropna().iloc[-1])
-                                 if before["b_regional_hyde_pop"].notna().any() else np.nan,
+               "regional_last_pre": float(pre_regional["b_regional_hyde_pop"].dropna().iloc[-1])
+                                 if pre_regional["b_regional_hyde_pop"].notna().any() else np.nan,
                "regional_first_post": float(after["b_regional_hyde_pop"].dropna().iloc[0])
                                  if after["b_regional_hyde_pop"].notna().any() else np.nan}
         if (np.isfinite(row["regional_last_pre"]) and row["regional_last_pre"] > 0 and
@@ -201,7 +205,7 @@ def main(argv=None):
     for draw in range(args.draws):
         frame = prepare_risk(data, rng)
         fits.extend(test_draw(frame, draw))
-        audits.extend(decoupling_audit(frame, draw))
+        audits.extend(decoupling_audit(frame, data, draw))
         if draw == 0:
             draw_figure(frame, args.out)
     raw = pd.DataFrame(fits)
