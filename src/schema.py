@@ -51,8 +51,13 @@ def assert_contract(df: pd.DataFrame) -> None:
         raise ValueError("CHSL-v1 version mismatch")
     if not df["basin_id"].astype(str).str.fullmatch(r"BASIN_\d{2,}").all():
         raise ValueError("CHSL-v1 invalid geographic key")
-    if not df["n0_id"].astype(str).str.fullmatch(r"N0_BASIN_\d{2,}_[+-]?\d+").all():
+    if not df["observation_scope"].isin(["institutional", "regional"]).all():
+        raise ValueError("CHSL-v1 invalid observation scope")
+    inst = df["observation_scope"].eq("institutional")
+    if not df.loc[inst, "n0_id"].astype(str).str.fullmatch(r"N0_BASIN_\d{2,}_[+-]?\d+").all():
         raise ValueError("CHSL-v1 invalid configuration key")
+    if df.loc[~inst, "n0_id"].notna().any():
+        raise ValueError("CHSL-v1 regional-only row has an institutional identity")
     if (pd.to_numeric(df["t_start"]) > pd.to_numeric(df["t_end"])).any():
         raise ValueError("CHSL-v1 reversed observation interval")
     for name in BOUNDED + DERIVED + REGIONAL:
