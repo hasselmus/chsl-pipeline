@@ -81,7 +81,10 @@ def quote(value: object) -> str:
 def bounded(df: pd.DataFrame, name: str, rng: np.random.Generator) -> pd.Series:
     low = pd.to_numeric(df[name + "_low"], errors="coerce").to_numpy(dtype=float)
     high = pd.to_numeric(df[name + "_high"], errors="coerce").to_numpy(dtype=float)
-    return pd.Series(rng.uniform(low, high), index=df.index)
+    mask = np.isfinite(low) & np.isfinite(high)
+    draws = np.full(len(low), np.nan)
+    draws[mask] = rng.uniform(low[mask], high[mask])
+    return pd.Series(draws, index=df.index)
 
 def compatible_mean(row: pd.Series, names: tuple[str, ...]) -> tuple[float, float, float, bool]:
     lo, hi = [], []
