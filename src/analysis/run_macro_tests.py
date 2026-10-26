@@ -47,6 +47,8 @@ def prepare_risk(df: pd.DataFrame, rng: np.random.Generator) -> pd.DataFrame:
             (g["b_urban_max"] < last).astype(float), np.nan
         )
     frame["interaction"] = frame["over_s_ratio"] * frame["u_shock_freq"]
+    frame["claims_shock"] = frame["a_claims_abstraction"] * frame["u_shock_freq"]
+    frame["levels_shock"] = frame["a_admin_levels"] * frame["u_shock_freq"]
     return frame
 
 def fit_logit(df: pd.DataFrame, response: str, terms: list[str],
@@ -98,7 +100,9 @@ def fit_cox(df: pd.DataFrame, terms: list[str],
             "term": term, "estimate": float(fitter.params_[term]),
             "hazard_ratio": float(np.exp(np.clip(fitter.params_[term], -700, 700))),
             "p_value": float(fitter.summary.loc[term, "p"]),
-            "aic": float(fitter.AIC_partial_), "n": n, "events": events, "status": "ok"
+            "aic": float(fitter.AIC_partial_),
+            "bic": float(-2 * fitter.log_likelihood_ + len(terms) * np.log(events)),
+            "n": n, "events": events, "status": "ok"
         } for term in terms]
     except (ValueError, np.linalg.LinAlgError, RuntimeError, KeyError) as error:
         return [{"draw": draw, "test": test, "model": model, "family": "cox_tv",
@@ -141,14 +145,22 @@ def decoupling_audit(frame: pd.DataFrame, full_data: pd.DataFrame, draw: int) ->
         regional = regional.sort_values("t_obs")
         pre_regional = regional[regional["t_obs"] < sigma]
         after = regional[regional["t_obs"] >= sigma]
+        early_window = before[before["t_obs"] >= sigma - 150]
+        admin_early = early_window["b_admin_pop"].dropna()
         row = {"draw": draw, "n0_id": name, "basin_id": str(g["basin_id"].iloc[0]),
                "sigma_draw": sigma,
+               "admin_early_pre": float(admin_early.iloc[0]) if len(admin_early) else np.nan,
                "admin_last_pre": float(before["b_admin_pop"].dropna().iloc[-1])
                                  if before["b_admin_pop"].notna().any() else np.nan,
                "regional_last_pre": float(pre_regional["b_regional_hyde_pop"].dropna().iloc[-1])
                                  if pre_regional["b_regional_hyde_pop"].notna().any() else np.nan,
                "regional_first_post": float(after["b_regional_hyde_pop"].dropna().iloc[0])
                                  if after["b_regional_hyde_pop"].notna().any() else np.nan}
+        if (np.isfinite(row["admin_early_pre"]) and row["admin_early_pre"] > 0 and
+            np.isfinite(row["admin_last_pre"])):
+            row["admin_pre_retention_ratio"] = row["admin_last_pre"] / row["admin_early_pre"]
+        else:
+            row["admin_pre_retention_ratio"] = np.nan
         if (np.isfinite(row["regional_last_pre"]) and row["regional_last_pre"] > 0 and
             np.isfinite(row["regional_first_post"])):
             row["regional_retention_ratio"] = row["regional_first_post"] / row["regional_last_pre"]
@@ -178,6 +190,10 @@ def test_draw(frame: pd.DataFrame, draw: int) -> list[dict]:
     t1 = ["over_s_ratio", "u_shock_freq", "interaction"]
     result += fit_logit(frame, "event_decade", t1, "T1", "overhead_shock", draw)
     result += fit_cox(frame, t1, "T1", "overhead_shock", draw)
+    components = ["a_claims_abstraction", "a_admin_levels", "s_food_storage",
+                  "s_irrigation", "u_shock_freq", "claims_shock", "levels_shock"]
+    result += fit_logit(frame, "event_decade", components, "T1", "component_interactions", draw)
+    result += fit_cox(frame, components, "T1", "component_interactions", draw)
     for label, terms in [
         ("drift", ["u_mean_50yr"]),
         ("shocks", ["u_shock_freq"]),
@@ -219,12 +235,13 @@ def main(argv=None):
             draws_fitted=("draw", "nunique"), estimate_median=("estimate", "median"),
             estimate_low=("estimate", lambda x: x.quantile(0.025)),
             estimate_high=("estimate", lambda x: x.quantile(0.975)),
-            p_median=("p_value", "median"), aic_median=("aic", "median")
+            p_median=("p_value", "median"), aic_median=("aic", "median"),
+            bic_median=("bic", "median")
         ).reset_index()
     else:
         summary = pd.DataFrame(columns=["test","model","family","term","draws_fitted",
                                         "estimate_median","estimate_low","estimate_high",
-                                        "p_median","aic_median"])
+                                        "p_median","aic_median","bic_median"])
     summary.to_csv(args.out / "CHSL-v1_model_summary.csv", index=False)
     (args.out / "CHSL-v1_model_summary.md").write_text(
         "# CHSL-v1 macro-statistical cross-tests\n\n"
