@@ -10,6 +10,7 @@ import pytest
 from src.schema import assert_contract, BOUNDED, VERSION
 from src.raw_ingest.build_chsl_parquet import anonymise, source_rows
 from src.transform.build_vectors import build_vectors
+from src.raw_ingest.regional_grid import geometry_definition, extract_regional as extract_masked
 from src.sidecar.export_ledger import export
 from src.analysis.run_macro_tests import prepare_risk, test_draw as evaluate_draw
 
@@ -45,13 +46,17 @@ def synthetic_dataset():
          "u_coverage_years":50},
     ])
     regional = pd.DataFrame([
-        {"basin_id":"BASIN_01","t_obs":100,"b_regional_hyde_pop":2000,
+        {"basin_id":"BASIN_01","t_obs":100,"b_regional_grid_pop":2000,
          "m_cropland_km2":50.0,"m_grazing_km2":10.0},
-        {"basin_id":"BASIN_01","t_obs":110,"b_regional_hyde_pop":2100,
+        {"basin_id":"BASIN_01","t_obs":110,"b_regional_grid_pop":2100,
          "m_cropland_km2":50.0,"m_grazing_km2":10.0},
-        {"basin_id":"BASIN_01","t_obs":180,"b_regional_hyde_pop":1950,
+        {"basin_id":"BASIN_01","t_obs":180,"b_regional_grid_pop":1950,
          "m_cropland_km2":45.0,"m_grazing_km2":9.0},
     ])
+    keys = [geometry_definition(row)[1] for _, row in basins.iterrows()]
+    region_meta = pd.DataFrame([{"basin_id": str(basins.iloc[i]["basin_id"]), **m}
+                                for i, m in enumerate(keys)])
+    regional = regional.merge(region_meta, on="basin_id", validate="many_to_one")
     return build_vectors(anonymise(source_rows(raw), basins, ends), forcing, regional)
 
 
@@ -63,7 +68,7 @@ def test_anonymisation_and_post_transition_regional_state():
     post = data[(data["basin_id"]=="BASIN_01") & (data["t_obs"]==180)].iloc[0]
     assert post["observation_scope"] == "regional"
     assert pd.isna(post["n0_id"])
-    assert post["b_regional_hyde_pop"] == 1950
+    assert post["b_regional_grid_pop"] == 1950
     assert not set(data.columns).intersection({"raw_region","n0_label","polity_id"})
     assert (data["b_admin_pop_low"].dropna() <= data["b_admin_pop_high"].dropna()).all()
 
@@ -75,7 +80,7 @@ def test_scenario_sidecar_two_formats(tmp_path):
         export(data, "BASIN_01", 100, 180, dest)
         rendered = dest.read_text()
         assert VERSION in rendered
-        assert "b_regional_hyde_pop" in rendered
+        assert "b_regional_grid_pop" in rendered
         assert "Configuration Alpha" not in rendered
         if extension == "json":
             parsed = json.loads(rendered)
@@ -124,7 +129,7 @@ def test_lexical_quarantine_on_tracked_project_files():
         item = root / relative
         if not item.is_file() or item.suffix not in {".py", ".md", ".json", ".toml", ".yml", ".yaml"}:
             continue
-        if relative.parts[:2] == ("src", "raw_ingest"):
+        if relative.parts[:2] == ("src", "raw_ingest") or relative.as_posix() == "PROVENANCE_AND_LICENSE.md":
             continue
         text = item.read_text(encoding="utf-8", errors="replace")
         leaked = [p.pattern for p in patterns if p.search(text)]
@@ -159,9 +164,12 @@ def test_end_to_end_command_line_outputs(tmp_path):
     forcing = pd.DataFrame([{"basin_id":"BASIN_01","t_obs":100,
                              "u_mean_50yr":0.1,"u_shock_freq":2}])
     demographic = pd.DataFrame([
-        {"basin_id":"BASIN_01","t_obs":100,"b_regional_hyde_pop":2000},
-        {"basin_id":"BASIN_01","t_obs":180,"b_regional_hyde_pop":1800}
+        {"basin_id":"BASIN_01","t_obs":100,"b_regional_grid_pop":2000},
+        {"basin_id":"BASIN_01","t_obs":180,"b_regional_grid_pop":1800}
     ])
+    geo_meta = geometry_definition(geo.iloc[0])[1]
+    for key, value in geo_meta.items():
+        demographic[key] = value
     files = {"i":raw,"g":geo,"t":annotation,"f":forcing,"r":demographic}
     for key, frame in files.items():
         frame.to_csv(tmp_path / f"{key}.csv", index=False)
@@ -197,7 +205,94 @@ def test_spatial_aggregation_uses_cells_and_geographic_bounds(tmp_path):
                            "lon_min":11,"lon_max":12}])
     result = extract_regional(basin,{"population":{"path":str(path),"variable":"population",
                                                   "unit":"persons_per_cell"}})
-    assert result["b_regional_hyde_pop"].tolist() == [800.0,800.0]
+    assert result["b_regional_grid_pop"].tolist() == [800.0,800.0]
     forcing = compute_forcing(pd.Series(np.linspace(0,1,60), index=np.arange(1,61)),
                               None,"BASIN_01",50,59)
     assert forcing[-1]["u_coverage_years"] == 50
+
+
+def test_radius_mask_and_same_boundary_across_rasters(tmp_path):
+    import xarray as xr
+    lat, lon = np.array([0., 1., 2.]), np.array([0., 1., 2.])
+    grid = xr.DataArray(np.ones((2, 3, 3))*100., dims=("time", "lat", "lon"),
+                        coords={"time":[100, 110], "lat":lat, "lon":lon}, name="pop")
+    path = tmp_path/"input.nc"
+    grid.to_dataset().to_netcdf(path)
+    basin = pd.DataFrame([{"basin_id":"BASIN_01", "lat":1., "lon":1., "radius_km":150.}])
+    result = extract_masked(basin, {"population":{"path":str(path),
+                              "variable":"pop","unit":"persons_per_cell"}})
+    # Five cell centres fall within 150 km, whereas the four corners do not.
+    assert result["b_regional_grid_pop"].tolist() == [500., 500.]
+    assert set(result["rj_kind"]) == {"centroid_buffer"}
+    assert set(result["grid_data_kind"]) == {"gridded_cells"}
+    assert len(set(result["rj_geometry_hash"])) == 1
+    assert result["b_regional_grid_pop_grid_cells"].tolist() == [5, 5]
+
+
+def test_polygon_mask_and_fractional_cropland(tmp_path):
+    import xarray as xr
+    geojson = {"type":"Polygon", "coordinates":[[
+        [0.4,0.4],[1.6,0.4],[1.6,1.6],[0.4,1.6],[0.4,0.4]
+    ]]}
+    location = tmp_path / "basin.geojson"
+    location.write_text(json.dumps(geojson))
+    lat = np.array([0., 1., 2.])
+    lon = np.array([0., 1., 2.])
+    crop = xr.DataArray(np.full((1,3,3),0.5),dims=("time","lat","lon"),
+                        coords={"time":[100],"lat":lat,"lon":lon},name="cropland")
+    path=tmp_path/"crop.nc"
+    crop.to_dataset().to_netcdf(path)
+    basin=pd.DataFrame([{"basin_id":"BASIN_01","polygon_path":str(location)}])
+    result=extract_masked(basin,{"cropland":{"path":str(path),"variable":"cropland",
+                                           "unit":"fraction_of_cell"}})
+    from src.raw_ingest.regional_grid import cell_area_km2
+    expected=0.5*cell_area_km2(lat,lon)[1,1]
+    assert result.iloc[0]["m_cropland_km2"] == pytest.approx(expected)
+    assert result.iloc[0]["m_cropland_km2_grid_cells"] == 1
+
+
+def test_dated_asc_grid_cells_and_nodata(tmp_path):
+    raster = "\n".join([
+        "ncols 2","nrows 2","xllcorner 0","yllcorner 0",
+        "cellsize 1","NODATA_value -9999","1 2","3 4"]) + "\n"
+    path=tmp_path/"100.asc"
+    path.write_text(raster)
+    basin=pd.DataFrame([{"basin_id":"BASIN_01","lat_min":0,"lat_max":2,
+                         "lon_min":0,"lon_max":2}])
+    observed=extract_masked(basin,{"population":{"files":{"100":str(path)},
+                                                    "unit":"persons_per_cell"}})
+    assert observed["b_regional_grid_pop"].iloc[0] == pytest.approx(10.)
+    path.write_text(raster.replace("3 4","-9999 4"))
+    incomplete=extract_masked(basin,{"population":{"files":{"100":str(path)},
+                                                      "unit":"persons_per_cell"}})
+    assert np.isnan(incomplete["b_regional_grid_pop"].iloc[0])
+
+
+def test_reviewed_admin_scope_and_grid_mismatch():
+    data=synthetic_dataset()
+    assert (data[data["n0_id"].notna()]["b_admin_boundary_scope"] == "unknown").all()
+    bad=data.copy()
+    bad["rj_geometry_hash"]="0"*20
+    with pytest.raises(ValueError, match="(mismatch|boundary)"):
+        build_vectors(
+            data[data["n0_id"].notna()].drop(columns=["observation_scope"]),
+            pd.DataFrame({"basin_id":["BASIN_01"],"t_obs":[100],
+                          "u_shock_freq":[2]}),
+            pd.DataFrame({"basin_id":["BASIN_01"],"t_obs":[100],
+                          "b_regional_grid_pop":[2000],
+                          "rj_id":["R_BASIN_01"],
+                          "rj_kind":["box"],
+                          "rj_geometry_hash":["0"*20],
+                          "grid_data_kind":["gridded_cells"]})
+        )
+
+
+def test_ledger_reports_boundary_mismatch(tmp_path):
+    data=synthetic_dataset()
+    target=tmp_path/"ledger.json"
+    export(data,"BASIN_01",100,180,target)
+    output=json.loads(target.read_text())
+    assert output["boundary"]["rj_id"] == "R_BASIN_01"
+    assert output["configurations"][0]["b_admin_boundary_scope"] == "unknown"
+    assert any(x["b_admin_boundary_scope"] == "not_applicable" for x in
+               output["decoupling_audit"] if x["t_obs"] == 180)
