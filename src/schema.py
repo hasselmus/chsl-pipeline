@@ -69,6 +69,8 @@ def assert_contract(df: pd.DataFrame) -> None:
                 raise ValueError(f"CHSL-v1 inconsistent compatible states: {name}")
 
 def quote(value: object) -> str:
+    if isinstance(value, (list, tuple, dict)):
+        return str(value)
     if pd.isna(value):
         return "not observed"
     if isinstance(value, (float, np.floating)):
