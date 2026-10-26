@@ -122,3 +122,75 @@ def test_lexical_quarantine_on_tracked_project_files():
         text = item.read_text(errors="ignore")
         leaked = [p.pattern for p in patterns if p.search(text)]
         assert not leaked, f"CHSL-v1 quarantine failed: {item.relative_to(root)}"
+
+
+def test_historical_bounds_parser():
+    from src.raw_ingest.build_chsl_parquet import numeric_bounds
+    assert numeric_bounds("[1, 3]", "a_admin_levels")[:2] == (1.0, 3.0)
+    assert numeric_bounds("-2--1", "a_admin_levels")[:2] == (-2.0, -1.0)
+    assert numeric_bounds("none", "a_claims_abstraction")[:2] == (0.0, 0.0)
+    assert np.isnan(numeric_bounds("present", "a_claims_abstraction")[0])
+
+
+def test_end_to_end_command_line_outputs(tmp_path):
+    from src.raw_ingest.build_chsl_parquet import main as build_main
+    from src.analysis.run_macro_tests import main as analysis_main
+    from src.sidecar.export_ledger import main as ledger_main
+    raw = pd.DataFrame([
+        {"raw_region":"Basin Source A", "n0_label":"Conf A", "year":100,
+         "irrigation":1, "Administrative levels":"[2,3]",
+         "Population":1000, "largest_settlement":200},
+        {"raw_region":"Basin Source A", "n0_label":"Conf A", "year":110,
+         "irrigation":1, "Administrative levels":"[3,4]",
+         "Population":900, "largest_settlement":180}
+    ])
+    geo = pd.DataFrame([{"raw_region":"Basin Source A","basin_id":"BASIN_01",
+                         "lat":45,"lon":12,"lat_min":44,"lat_max":46,
+                         "lon_min":11,"lon_max":13}])
+    annotation = pd.DataFrame([{"raw_region":"Basin Source A", "n0_label":"Conf A",
+                                "sigma_low":160,"sigma_high":170,"event_observed":True}])
+    forcing = pd.DataFrame([{"basin_id":"BASIN_01","t_obs":100,
+                             "u_mean_50yr":0.1,"u_shock_freq":2}])
+    demographic = pd.DataFrame([
+        {"basin_id":"BASIN_01","t_obs":100,"b_regional_hyde_pop":2000},
+        {"basin_id":"BASIN_01","t_obs":180,"b_regional_hyde_pop":1800}
+    ])
+    files = {"i":raw,"g":geo,"t":annotation,"f":forcing,"r":demographic}
+    for key, frame in files.items():
+        frame.to_csv(tmp_path / f"{key}.csv", index=False)
+    parquet = tmp_path / "chsl_v1.parquet"
+    build_main(["--institutional",str(tmp_path/"i.csv"),
+                "--basins",str(tmp_path/"g.csv"),
+                "--terminations",str(tmp_path/"t.csv"),
+                "--forcing-csv",str(tmp_path/"f.csv"),
+                "--regional-csv",str(tmp_path/"r.csv"),
+                "--out",str(parquet)])
+    assert parquet.is_file()
+    result = pd.read_parquet(parquet)
+    assert len(result) == 3
+    assert result.iloc[0]["b_admin_pop_min"] == 1000
+    destination = tmp_path / "ledger.json"
+    ledger_main(["--input",str(parquet),"--basin","BASIN_01",
+                 "--start","100","--end","180","--out",str(destination)])
+    assert destination.is_file()
+    analysis_main(["--input",str(parquet),"--draws","2",
+                   "--seed","17","--out",str(tmp_path/"models")])
+    assert (tmp_path/"models"/"CHSL-v1_draw_models.csv").is_file()
+
+
+def test_spatial_aggregation_uses_cells_and_geographic_bounds(tmp_path):
+    import xarray as xr
+    from src.raw_ingest.physical_grids import extract_regional, compute_forcing
+    cube = xr.DataArray(np.ones((2, 2, 2))*200.0,
+                        coords={"time":[100,110],"lat":[44.,45.],"lon":[11.,12.]},
+                        dims=("time","lat","lon"),name="population")
+    path = tmp_path/"grid.nc"
+    cube.to_dataset().to_netcdf(path)
+    basin = pd.DataFrame([{"basin_id":"BASIN_01","lat_min":44,"lat_max":45,
+                           "lon_min":11,"lon_max":12}])
+    result = extract_regional(basin,{"population":{"path":str(path),"variable":"population",
+                                                  "unit":"persons_per_cell"}})
+    assert result["b_regional_hyde_pop"].tolist() == [800.0,800.0]
+    forcing = compute_forcing(pd.Series(np.linspace(0,1,60), index=np.arange(1,61)),
+                              None,"BASIN_01",50,59)
+    assert forcing[-1]["u_coverage_years"] == 50
