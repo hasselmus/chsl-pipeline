@@ -194,5 +194,22 @@
     "elite overproduction",
     "secular cycle",
     "social complexity"
+  ],
+  "prohibited_export_tokens": [
+    "Seshat",
+    "Turchin",
+    "Polaris",
+    "Equinox",
+    "CrisisDB",
+    "Cliopatria",
+    "NGA",
+    "SPC1",
+    "SPC2",
+    "Psi",
+    "elite overproduction",
+    "secular cycle",
+    "social complexity",
+    "asabiyyah",
+    "moralizing gods"
   ]
 }
