@@ -5,6 +5,7 @@ import json
 from pathlib import Path
 import numpy as np
 import pandas as pd
+from src.raw_ingest.guard import assert_clean
 from src.schema import (
     ADMINISTRATIVE, EXOGENOUS, POPULATION, REGIONAL, STRUCTURAL,
     VIGILANCE, VERSION, assert_contract, quote, safe_outbound_text
@@ -168,6 +169,7 @@ def export(data: pd.DataFrame, basin: str, start: int, end: int, out: Path):
     else:
         raise ValueError("CHSL-v1 output must be .md or .json")
     safe_outbound_text(content)
+    assert_clean(content)
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(content, encoding="utf-8")
     return out
