@@ -1,0 +1,1 @@
+"""Isolated raw ingest boundary."""

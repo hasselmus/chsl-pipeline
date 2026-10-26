@@ -1,0 +1,198 @@
+{
+  "_scope": "Raw-to-CHSL variable translation: never publish this mapping in a sidecar.",
+  "source_release": {
+    "institutional": "seshatdb/Equinox_Data: Equinox_on_GitHub_June9_2022.xlsx",
+    "temperature": "PAGES2k",
+    "dryness": "OWDA/NADA/MADA",
+    "regional": "HYDE 3.3"
+  },
+  "column_aliases": {
+    "raw_region": [
+      "NGA",
+      "nga",
+      "natural_geographic_area",
+      "Region",
+      "region",
+      "area"
+    ],
+    "n0_label": [
+      "Polity",
+      "polity",
+      "Polity Name",
+      "polity_name",
+      "polity_id",
+      "Cultural group"
+    ],
+    "year": [
+      "Year",
+      "year",
+      "Time",
+      "Date",
+      "date"
+    ],
+    "t_start": [
+      "year_start",
+      "Start Year",
+      "Start Date",
+      "From"
+    ],
+    "t_end": [
+      "year_end",
+      "End Year",
+      "End Date",
+      "To"
+    ],
+    "citation": [
+      "Reference",
+      "reference",
+      "References",
+      "Citation",
+      "Source"
+    ],
+    "variable": [
+      "Variable",
+      "variable",
+      "variable_name",
+      "Trait",
+      "trait"
+    ],
+    "value": [
+      "Value",
+      "value",
+      "Code",
+      "code"
+    ],
+    "lower": [
+      "min",
+      "Min",
+      "minimum",
+      "lower",
+      "Lower"
+    ],
+    "upper": [
+      "max",
+      "Max",
+      "maximum",
+      "upper",
+      "Upper"
+    ],
+    "disputed": [
+      "Disputed",
+      "disputed",
+      "uncertain",
+      "confidence"
+    ]
+  },
+  "variables": {
+    "s_irrigation": [
+      "irrigation",
+      "Irrigation Systems",
+      "Irrigation",
+      "irrigation_systems"
+    ],
+    "s_water_supply": [
+      "water_supply",
+      "Water Supply Systems",
+      "drinking_water"
+    ],
+    "s_food_storage": [
+      "food_storage",
+      "Food Storage Sites",
+      "granaries",
+      "Granaries"
+    ],
+    "s_roads": [
+      "roads",
+      "Roads",
+      "Roads and Bridges"
+    ],
+    "s_bridges": [
+      "bridges",
+      "Bridges"
+    ],
+    "s_ports": [
+      "ports",
+      "Ports"
+    ],
+    "s_mines_foundry": [
+      "mines_foundry",
+      "Mining",
+      "Metalworking",
+      "Mines"
+    ],
+    "a_admin_levels": [
+      "administrative_levels",
+      "Administrative levels",
+      "Administrative Levels",
+      "levels_of_hierarchy"
+    ],
+    "a_spec_operators": [
+      "specialist_bureaucrats",
+      "Professional Bureaucracy",
+      "Full-time bureaucrats",
+      "Specialist personnel"
+    ],
+    "a_legal_formal": [
+      "formal_legal_codes",
+      "Legal Codes",
+      "Courts",
+      "Formal Legal Code"
+    ],
+    "a_claims_abstraction": [
+      "currency_forms",
+      "Money",
+      "Currency",
+      "Credit"
+    ],
+    "p_standing_army": [
+      "standing_army",
+      "Professional Military Officers",
+      "Standing army"
+    ],
+    "p_mercenary_reliance": [
+      "mercenaries",
+      "Mercenaries"
+    ],
+    "p_fortifications_tier": [
+      "fortifications",
+      "Fortifications",
+      "Defensive Walls"
+    ],
+    "p_internal_policing": [
+      "internal_policing",
+      "Police",
+      "Internal policing"
+    ],
+    "p_ideological_enforcement": [
+      "ideological_enforcement",
+      "Religious enforcement"
+    ],
+    "b_admin_pop": [
+      "population",
+      "Polity Population",
+      "Population",
+      "population_size"
+    ],
+    "b_urban_max": [
+      "largest_settlement",
+      "Largest Settlement Population",
+      "Largest settlement",
+      "Urban Population"
+    ]
+  },
+  "exclude_patterns": [
+    "SPC1",
+    "SPC2",
+    "^Psi$",
+    "principal component",
+    "imputed",
+    "modelled",
+    "derived",
+    "index",
+    "aggregate",
+    "score",
+    "elite overproduction",
+    "secular cycle",
+    "social complexity"
+  ]
+}
