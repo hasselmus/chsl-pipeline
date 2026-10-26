@@ -10,6 +10,7 @@ from src.schema import (
 def build_vectors(df: pd.DataFrame, forcing: pd.DataFrame | None = None,
                   regional: pd.DataFrame | None = None) -> pd.DataFrame:
     df = df.copy()
+    df["observation_scope"] = "institutional"
     for name in BOUNDED:
         for part in ("low", "high"):
             key = f"{name}_{part}"
@@ -52,6 +53,40 @@ def build_vectors(df: pd.DataFrame, forcing: pd.DataFrame | None = None,
             if k not in df:
                 df[k] = False if suffix == "disputed_flag" else np.nan
     df["chsl_version"] = VERSION
+    # Preserve physical and demographic observations after the mapped configuration ends.
+    physical_keys = []
+    for source in (forcing, regional):
+        if source is not None and not source.empty:
+            physical_keys.append(source[["basin_id", "t_obs"]])
+    if physical_keys:
+        keys = pd.concat(physical_keys, ignore_index=True).drop_duplicates()
+        missing = keys.merge(df[["basin_id", "t_obs"]].drop_duplicates(),
+                             on=["basin_id", "t_obs"], how="left", indicator=True)
+        missing = missing[missing["_merge"] == "left_only"]
+        if not missing.empty:
+            positions = df[["basin_id", "lat", "lon"]].drop_duplicates("basin_id")
+            extra = missing[["basin_id", "t_obs"]].merge(positions, on="basin_id", validate="many_to_one")
+            extra["observation_scope"] = "regional"
+            extra["n0_id"] = None
+            extra["n0_start_yr"] = np.nan
+            extra["n0_start_estimated_flag"] = False
+            extra["t_start"] = extra["t_obs"]
+            extra["t_end"] = extra["t_obs"]
+            extra["sigma_low"] = np.nan
+            extra["sigma_high"] = np.nan
+            extra["event_observed"] = False
+            extra["source_refs"] = ""
+            extra["chsl_version"] = VERSION
+            for source in (forcing, regional):
+                if source is not None and not source.empty:
+                    extra = extra.merge(source, on=["basin_id", "t_obs"],
+                                        how="left", validate="one_to_one")
+            df = pd.concat([df, extra], ignore_index=True)
+    for field in REGIONAL:
+        for suffix in ("low", "high", "disputed_flag"):
+            key = field + "_" + suffix
+            if key not in df:
+                df[key] = np.nan if suffix != "disputed_flag" else False
     df = df.loc[:, list(dict.fromkeys(df.columns))]
     assert_contract(df)
     return df.sort_values(["basin_id", "n0_id", "t_obs", "t_start"]).reset_index(drop=True)
