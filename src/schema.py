@@ -28,6 +28,7 @@ BASE = (
     "n0_start_yr", "n0_start_estimated_flag", "t_obs", "t_start", "t_end",
     "sigma_low", "sigma_high", "event_observed", "source_refs"
 )
+POP_ALIASES = ("b_admin_pop_min", "b_admin_pop_max", "b_urban_max_min", "b_urban_max_max")
 DERIVED = (
     "s_phys_index", "a_overhead_index", "p_vig_index",
     "s_phys_coverage", "a_overhead_coverage", "p_vig_coverage"
@@ -36,7 +37,7 @@ EXTRA = tuple(
     f"{name}_{suffix}" for name in BOUNDED + DERIVED
     for suffix in ("low", "high", "disputed_flag")
 )
-ALLOWLIST = frozenset(BASE + EXOGENOUS + REGIONAL + DERIVED + EXTRA + tuple(
+ALLOWLIST = frozenset(BASE + EXOGENOUS + REGIONAL + DERIVED + POP_ALIASES + EXTRA + tuple(
     f"{name}_{suffix}" for name in REGIONAL for suffix in ("low", "high", "disputed_flag")
 ))
 
