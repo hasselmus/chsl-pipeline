@@ -296,3 +296,33 @@ def test_ledger_reports_boundary_mismatch(tmp_path):
     assert output["configurations"][0]["b_admin_boundary_scope"] == "unknown"
     assert any(x["b_admin_boundary_scope"] == "not_applicable" for x in
                output["decoupling_audit"] if x["t_obs"] == 180)
+
+
+def test_two_dimensional_dated_netcdf(tmp_path):
+    import xarray as xr
+    cube = xr.DataArray(np.array([[1., 2.], [3., 4.]]),
+                        coords={"lat":[0.5,1.5], "lon":[0.5,1.5]},
+                        dims=("lat","lon"), name="headcount")
+    source = tmp_path / "year_100.nc"
+    cube.to_dataset().to_netcdf(source)
+    basin = pd.DataFrame([{"basin_id":"BASIN_01", "lat_min":0.,
+                           "lat_max":2., "lon_min":0., "lon_max":2.}])
+    extracted = extract_masked(basin, {
+        "population": {"files": {"100":str(source)},
+                       "variable":"headcount", "unit":"persons_per_cell"}
+    })
+    assert extracted.iloc[0]["b_regional_grid_pop"] == pytest.approx(10.0)
+    assert extracted.iloc[0]["b_regional_grid_pop_grid_cells"] == 4
+
+
+def test_population_boundary_requires_explicit_review():
+    raw = pd.DataFrame([{"raw_region":"Region A","n0_label":"Conf A",
+                         "year":100,"Population":1000}])
+    geometry = pd.DataFrame([{"raw_region":"Region A","basin_id":"BASIN_01",
+                              "lat":12.,"lon":14., "radius_km":200.,
+                              "admin_population_scope":"rj_exact"}])
+    result = anonymise(source_rows(raw), geometry, None)
+    assert set(result["b_admin_boundary_scope"]) == {"matched"}
+    geometry.loc[0, "admin_population_scope"] = "jurisdiction"
+    result2 = anonymise(source_rows(raw), geometry, None)
+    assert set(result2["b_admin_boundary_scope"]) == {"unmatched"}
