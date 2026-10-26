@@ -32,7 +32,7 @@ def coordinates(df: pd.DataFrame, target: str) -> str:
     except (ValueError, AttributeError) as error:
         raise ValueError("CHSL-v1 basin must be an internal identifier or lat,lon") from error
     radius = np.sqrt((ids["lat"].astype(float) - lat)**2 +
-                     ((ids["lon"].astype(float) - lon)**2)
+                     ((ids["lon"].astype(float) - lon)**2))
     i = radius.idxmin()
     if float(radius.loc[i]) > 1:
         raise ValueError("CHSL-v1 no basin centroid lies within one degree")
