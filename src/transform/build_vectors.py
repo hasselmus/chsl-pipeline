@@ -104,7 +104,10 @@ def sample_compatible_states(df: pd.DataFrame, rng: np.random.Generator,
     for name in BOUNDED:
         low = pd.to_numeric(df[name + "_low"], errors="coerce").to_numpy(float)
         high = pd.to_numeric(df[name + "_high"], errors="coerce").to_numpy(float)
-        out[name] = rng.uniform(low, high)
+        mask = np.isfinite(low) & np.isfinite(high)
+        draws = np.full(len(low), np.nan)
+        draws[mask] = rng.uniform(low[mask], high[mask])
+        out[name] = draws
     for index, names in {
         "s_phys_index": STRUCTURAL, "a_overhead_index": ADMINISTRATIVE,
         "p_vig_index": VIGILANCE
