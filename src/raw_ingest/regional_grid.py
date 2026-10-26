@@ -146,9 +146,28 @@ def read_layers(cfg: dict):
         if "path" in cfg:
             raise ValueError("CHSL-v1 select either dated ASC files or a NetCDF cube")
         for year, path in sorted(cfg["files"].items(), key=lambda v: int(v[0])):
-            if Path(path).suffix.lower() != ".asc":
-                raise ValueError("CHSL-v1 dated files must be ASC rasters")
-            arr, lat, lon = read_asc(Path(path))
+            if Path(path).suffix.lower() == ".asc":
+                arr, lat, lon = read_asc(Path(path))
+            elif Path(path).suffix.lower() in (".nc", ".nc4"):
+                with xr.open_dataset(path, decode_times=False) as grid:
+                    name = cfg.get("variable")
+                    if name is None:
+                        candidates = [key for key, data in grid.data_vars.items()
+                                      if data.ndim == 2 and {"lat", "lon"} <= set(data.dims)]
+                        if len(candidates) != 1:
+                            raise ValueError("CHSL-v1 ambiguous two-dimensional grid variable")
+                        name = candidates[0]
+                    if name not in grid:
+                        raise ValueError("CHSL-v1 requested two-dimensional grid variable absent")
+                    layer = grid[name]
+                    if set(layer.dims) != {"lat", "lon"}:
+                        raise ValueError("CHSL-v1 dated NetCDF raster must have lat and lon dimensions")
+                    layer = layer.transpose("lat", "lon")
+                    arr = np.asarray(layer.values, dtype=float)
+                    lat = np.asarray(layer["lat"].values, dtype=float)
+                    lon = np.asarray(layer["lon"].values, dtype=float)
+            else:
+                raise ValueError("CHSL-v1 dated files must be ASC or two-dimensional NetCDF")
             yield int(year), arr, lat, lon
         return
     if "path" not in cfg:
