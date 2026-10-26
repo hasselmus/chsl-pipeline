@@ -24,7 +24,7 @@ REGIONAL = (
     "b_regional_hyde_pop", "m_cropland_km2", "m_grazing_km2"
 )
 BASE = (
-    "chsl_version", "basin_id", "lat", "lon", "n0_id",
+    "chsl_version", "basin_id", "lat", "lon", "n0_id", "observation_scope",
     "n0_start_yr", "n0_start_estimated_flag", "t_obs", "t_start", "t_end",
     "sigma_low", "sigma_high", "event_observed", "source_refs"
 )
