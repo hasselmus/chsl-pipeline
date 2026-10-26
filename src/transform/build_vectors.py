@@ -52,6 +52,12 @@ def build_vectors(df: pd.DataFrame, forcing: pd.DataFrame | None = None,
             k = field + "_" + suffix
             if k not in df:
                 df[k] = False if suffix == "disputed_flag" else np.nan
+    for field, low_name, high_name in (
+        ("b_admin_pop", "b_admin_pop_min", "b_admin_pop_max"),
+        ("b_urban_max", "b_urban_max_min", "b_urban_max_max")
+    ):
+        df[low_name] = df[field + "_low"]
+        df[high_name] = df[field + "_high"]
     df["chsl_version"] = VERSION
     # Preserve physical and demographic observations after the mapped configuration ends.
     physical_keys = []
