@@ -8,7 +8,7 @@ from urllib.request import Request, urlopen
 
 RAW = Path("data/raw")
 SOURCES = {
-    "institutional": "https://raw.githubusercontent.com/seshatdb/Equinox_Data/master/Equinox_on_GitHub_June9_2022.xlsx",
+    "institutional": "https://raw.githubusercontent.com/seshatdb/Equinox_Data/main/Equinox_on_GitHub_June9_2022.xlsx",
     "temperature": "https://www.ncei.noaa.gov/pub/data/paleo/pages2k/neukom2019temp/pages2k_ngeo19_recons.nc",
     "dry_europe": "https://www.ncei.noaa.gov/pub/data/paleo/treering/reconstructions/europe/owda.nc",
     "dry_america": "https://www.ncei.noaa.gov/pub/data/paleo/drought/NAmericanDroughtAtlas.v2/NADAv2-2008.nc",
