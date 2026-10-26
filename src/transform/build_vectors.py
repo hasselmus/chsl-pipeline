@@ -29,7 +29,7 @@ def build_vectors(df: pd.DataFrame, forcing: pd.DataFrame | None = None,
         values = df.apply(compatible_mean, axis=1, names=components, result_type="expand")
         df[index + "_low"] = values[0].astype(float)
         df[index + "_high"] = values[1].astype(float)
-        df[index + "_coverage"] = values[2].astype(float)
+        df[index.removesuffix("_index") + "_coverage"] = values[2].astype(float)
         df[index + "_disputed_flag"] = values[3].astype(bool)
     if forcing is not None:
         if forcing.duplicated(["basin_id", "t_obs"]).any():
