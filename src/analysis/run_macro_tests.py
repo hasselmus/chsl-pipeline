@@ -49,6 +49,8 @@ def prepare_risk(df: pd.DataFrame, rng: np.random.Generator) -> pd.DataFrame:
     frame["interaction"] = frame["over_s_ratio"] * frame["u_shock_freq"]
     frame["claims_shock"] = frame["a_claims_abstraction"] * frame["u_shock_freq"]
     frame["levels_shock"] = frame["a_admin_levels"] * frame["u_shock_freq"]
+    # A capacity proxy interacting with observed shocks; the actual reserve and refill period are latent.
+    frame["storage_shock"] = frame["s_food_storage"] * frame["u_shock_freq"]
     return frame
 
 def fit_logit(df: pd.DataFrame, response: str, terms: list[str],
@@ -147,15 +149,18 @@ def decoupling_audit(frame: pd.DataFrame, full_data: pd.DataFrame, draw: int) ->
         after = regional[regional["t_obs"] >= sigma]
         early_window = before[before["t_obs"] >= sigma - 150]
         admin_early = early_window["b_admin_pop"].dropna()
+        match = bool((g["b_admin_boundary_scope"] == "matched").all())
         row = {"draw": draw, "n0_id": name, "basin_id": str(g["basin_id"].iloc[0]),
+               "rj_id": str(g["rj_id"].iloc[0]),
+               "boundary_comparable": match,
                "sigma_draw": sigma,
                "admin_early_pre": float(admin_early.iloc[0]) if len(admin_early) else np.nan,
                "admin_last_pre": float(before["b_admin_pop"].dropna().iloc[-1])
                                  if before["b_admin_pop"].notna().any() else np.nan,
-               "regional_last_pre": float(pre_regional["b_regional_hyde_pop"].dropna().iloc[-1])
-                                 if pre_regional["b_regional_hyde_pop"].notna().any() else np.nan,
-               "regional_first_post": float(after["b_regional_hyde_pop"].dropna().iloc[0])
-                                 if after["b_regional_hyde_pop"].notna().any() else np.nan}
+               "regional_last_pre": float(pre_regional["b_regional_grid_pop"].dropna().iloc[-1])
+                                 if pre_regional["b_regional_grid_pop"].notna().any() else np.nan,
+               "regional_first_post": float(after["b_regional_grid_pop"].dropna().iloc[0])
+                                 if after["b_regional_grid_pop"].notna().any() else np.nan}
         if (np.isfinite(row["admin_early_pre"]) and row["admin_early_pre"] > 0 and
             np.isfinite(row["admin_last_pre"])):
             row["admin_pre_retention_ratio"] = row["admin_last_pre"] / row["admin_early_pre"]
@@ -166,8 +171,10 @@ def decoupling_audit(frame: pd.DataFrame, full_data: pd.DataFrame, draw: int) ->
             row["regional_retention_ratio"] = row["regional_first_post"] / row["regional_last_pre"]
         else:
             row["regional_retention_ratio"] = np.nan
-        row["status"] = ("paired_regional_observations" if
-                         np.isfinite(row["regional_retention_ratio"]) else "post_transition_unobserved")
+        row["status"] = (
+            "post_transition_unobserved" if not np.isfinite(row["regional_retention_ratio"])
+            else "paired_boundary_matched" if match else "paired_boundary_unmatched"
+        )
         rows.append(row)
     return rows
 
@@ -202,6 +209,11 @@ def test_draw(frame: pd.DataFrame, draw: int) -> list[dict]:
         result += fit_logit(frame, "event_decade", terms, "T2", label + "_termination", draw)
         result += fit_logit(frame, "urban_contraction", terms, "T2", label + "_urban", draw)
         result += fit_cox(frame, terms, "T2", label + "_termination", draw)
+    result += fit_logit(frame, "event_decade",
+                        ["s_food_storage", "u_shock_freq", "storage_shock"],
+                        "T2", "latent_reserve_capacity_proxy", draw)
+    result += fit_cox(frame, ["s_food_storage", "u_shock_freq", "storage_shock"],
+                      "T2", "latent_reserve_capacity_proxy", draw)
     result += event_study(frame, draw)
     return result
 
@@ -246,6 +258,9 @@ def main(argv=None):
     (args.out / "CHSL-v1_model_summary.md").write_text(
         "# CHSL-v1 macro-statistical cross-tests\n\n"
         "Compatible-state Monte Carlo interval summaries; no missing data are assigned midpoints.\n\n"
+        "Material storage facilities are s(t) proxies only. B(t), replenishment and "
+        "coverage durations remain unobserved; storage–forcing interactions test "
+        "associations, not the physical buffer inequality.\n\n"
         + summary.to_markdown(index=False) +
         "\n\nInterpretation: coefficients are observational; p-value medians are not "
         "pooled hypothesis-test probabilities. Event counts and model feasibility "

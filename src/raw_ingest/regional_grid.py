@@ -83,7 +83,7 @@ def haversine(lat, lon, centre_lat, centre_lon):
 
 def cell_mask(basin: pd.Series, lats: np.ndarray, lons: np.ndarray) -> tuple[np.ndarray, dict]:
     parameter, meta = geometry_definition(basin)
-    yy, xx = np.meshgrid(np.asarray(lats, float), normalise_lon(lons))
+    yy, xx = np.meshgrid(np.asarray(lats, float), normalise_lon(lons), indexing="ij")
     if meta["rj_kind"] == "centroid_buffer":
         centre_y, centre_x, radius = parameter
         within = haversine(yy, xx, centre_y, centre_x) <= radius

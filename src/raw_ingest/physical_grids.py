@@ -163,54 +163,8 @@ def extract_forcing(basins: pd.DataFrame, temperature: Path | None,
     return pd.DataFrame(records)
 
 def extract_regional(basins: pd.DataFrame, spec: dict) -> pd.DataFrame:
-    components = {
-        "population": "b_regional_hyde_pop",
-        "cropland": "m_cropland_km2",
-        "grazing": "m_grazing_km2"
-    }
-    collected = []
-    for key, output_name in components.items():
-        if key not in spec:
-            continue
-        cfg = spec[key]
-        if cfg.get("unit") not in ("persons_per_cell", "km2_per_cell"):
-            raise ValueError("CHSL-v1 regional aggregation needs per-cell counts or area units")
-        expected_unit = "persons_per_cell" if key == "population" else "km2_per_cell"
-        if cfg["unit"] != expected_unit:
-            raise ValueError("CHSL-v1 regional grid unit does not match selected variable")
-        ds, da, (td, yd, xd) = open_variable(Path(cfg["path"]), cfg.get("variable"))
-        try:
-            dates = years(da[td])
-            lats = np.asarray(da[yd], dtype=float)
-            lons = np.asarray(da[xd], dtype=float)
-            for _, basin in basins.iterrows():
-                a, b = float(basin["lat_min"]), float(basin["lat_max"])
-                c, d = float(basin["lon_min"]), float(basin["lon_max"])
-                c, d = longitude_wrap(c, lons), longitude_wrap(d, lons)
-                if c > d:
-                    raise ValueError("CHSL-v1 antimeridian boxes require pre-splitting")
-                y_idx = np.where((lats >= a) & (lats <= b))[0]
-                x_idx = np.where((lons >= c) & (lons <= d))[0]
-                if len(y_idx) == 0 or len(x_idx) == 0:
-                    continue
-                cells = da.isel({yd: y_idx, xd: x_idx})
-                totals = cells.sum(dim=(yd, xd), skipna=True, min_count=1)
-                for date, value in zip(dates, np.asarray(totals.values, dtype=float)):
-                    if int(date) % 10:
-                        continue
-                    collected.append({"basin_id": str(basin["basin_id"]),
-                                      "t_obs": int(date), output_name: float(value)})
-        finally:
-            ds.close()
-    if not collected:
-        return pd.DataFrame(columns=["basin_id", "t_obs"])
-    frame = pd.DataFrame(collected).groupby(["basin_id", "t_obs"], as_index=False).first()
-    for field in components.values():
-        if field in frame:
-            frame[field + "_low"] = frame[field]
-            frame[field + "_high"] = frame[field]
-            frame[field + "_disputed_flag"] = False
-    return frame
+    from src.raw_ingest.regional_grid import extract_regional as extract_masked
+    return extract_masked(basins, spec)
 
 def main(argv=None):
     p = argparse.ArgumentParser(description="CHSL-v1 spatial extraction")

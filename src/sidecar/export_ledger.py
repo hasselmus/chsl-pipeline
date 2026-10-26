@@ -52,7 +52,8 @@ def observations(data: pd.DataFrame, basin: str, start: int, end: int) -> dict:
     for name, group in sub[sub["n0_id"].notna()].groupby("n0_id"):
         first = group.iloc[0]
         cfg.append({
-            "n0_id": name, "n0_start_yr": value(first["n0_start_yr"]),
+            "n0_id": name,
+            "b_admin_boundary_scope": str(first["b_admin_boundary_scope"]), "n0_start_yr": value(first["n0_start_yr"]),
             "n0_start_estimated_flag": bool(first["n0_start_estimated_flag"]),
             "sigma_window": [value(first["sigma_low"]), value(first["sigma_high"])],
             "termination_observed": bool(first["event_observed"])
@@ -85,7 +86,7 @@ def observations(data: pd.DataFrame, basin: str, start: int, end: int) -> dict:
     audit = []
     for _, row in sub.sort_values(["t_obs", "n0_id"]).iterrows():
         if not any(pd.notna(row.get(k)) for k in
-                   ("b_admin_pop_low", "b_urban_max_low", "b_regional_hyde_pop")):
+                   ("b_admin_pop_low", "b_urban_max_low", "b_regional_grid_pop")):
             continue
         audit.append({
             "t_obs": value(row["t_obs"]),
@@ -94,21 +95,27 @@ def observations(data: pd.DataFrame, basin: str, start: int, end: int) -> dict:
             "b_admin_pop_max": value(row.get("b_admin_pop_high")),
             "b_urban_max_min": value(row.get("b_urban_max_low")),
             "b_urban_max_max": value(row.get("b_urban_max_high")),
-            "b_regional_hyde_pop": value(row.get("b_regional_hyde_pop")),
+            "b_regional_grid_pop": value(row.get("b_regional_grid_pop")),
+            "b_admin_boundary_scope": str(row["b_admin_boundary_scope"]),
+            "rj_id": str(row["rj_id"]),
             "m_cropland_km2": value(row.get("m_cropland_km2")),
             "m_grazing_km2": value(row.get("m_grazing_km2"))
         })
     return {
         "ledger": VERSION, "chapter": 14,
         "boundary": {"basin_id": basin, "lat": lat, "lon": lon,
-                     "t_start": start, "t_end": end},
+                     "t_start": start, "t_end": end,
+                     "rj_id": str(sub["rj_id"].iloc[0]),
+                     "rj_kind": str(sub["rj_kind"].iloc[0]),
+                     "rj_geometry_hash": str(sub["rj_geometry_hash"].iloc[0]),
+                     "rj_radius_km": value(sub["rj_radius_km"].iloc[0])},
         "configurations": cfg, "forcing": climate,
         "inventory": inventory, "decoupling_audit": audit,
         "caveats": [
             "Institutional termination and regional demographic persistence are distinct observations.",
-            "Administrative populations and geographically bounded populations have different boundaries.",
+            "A direct administrative-to-regional population comparison requires b_admin_boundary_scope = matched; otherwise the two series have distinct observation supports.",
             "Absence of a post-termination administrative record is not a population count of zero.",
-            "Physical features do not directly measure stored exergy or buffer coverage.",
+            "Physical infrastructure is a structural s(t) proxy only. B(t), refill duration and buffer coverage are unobserved.",
             "Temporal gaps and missing compatible-state bounds are not imputed."
         ]
     }
@@ -132,10 +139,12 @@ def to_markdown(ledger: dict) -> str:
             f"## Boundary and temporal declaration\n\n"
             f"Basin: `{b['basin_id']}`; centroid: "
             f"({b['lat']:.4f}, {b['lon']:.4f}); "
-            f"observation window: [{b['t_start']}, {b['t_end']}].\n\n")
+            f"observation window: [{b['t_start']}, {b['t_end']}]. "
+            f"Boundary: `{b['rj_id']}` ({b['rj_kind']}, "
+            f"digest `{b['rj_geometry_hash']}`).\n\n")
     text += table(ledger["configurations"],
                   ["n0_id", "n0_start_yr", "n0_start_estimated_flag",
-                   "sigma_window", "termination_observed"])
+                   "sigma_window", "termination_observed", "b_admin_boundary_scope"])
     text += "\n## Exogenous forcing u(t)\n\n"
     text += ("Trailing 50-year means and counts cover only observed annual values. "
              "Recurrence is a proxy, not a buffer measurement.\n\n")
@@ -148,8 +157,9 @@ def to_markdown(ledger: dict) -> str:
                                         "disputed_flag","source_refs"])
     text += "\n## Institutional-to-regional decoupling audit\n\n"
     text += table(ledger["decoupling_audit"],
-                  ["t_obs","n0_id","b_admin_pop_min","b_admin_pop_max",
-                   "b_urban_max_min","b_urban_max_max","b_regional_hyde_pop",
+                  ["t_obs","n0_id","rj_id","b_admin_boundary_scope",
+                   "b_admin_pop_min","b_admin_pop_max",
+                   "b_urban_max_min","b_urban_max_max","b_regional_grid_pop",
                    "m_cropland_km2","m_grazing_km2"])
     text += "\n## Observation limits\n\n"
     for item in ledger["caveats"]:

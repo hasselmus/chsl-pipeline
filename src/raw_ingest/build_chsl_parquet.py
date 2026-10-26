@@ -9,6 +9,7 @@ import numpy as np
 import pandas as pd
 from src.schema import BOUNDED, VERSION
 from src.transform.build_vectors import build_vectors
+from src.raw_ingest.regional_grid import geometry_definition
 
 HERE = Path(__file__).parent
 MAPPING = json.loads((HERE / "quarantine_map.json").read_text())
@@ -138,13 +139,23 @@ def source_rows(raw: pd.DataFrame) -> pd.DataFrame:
 
 def anonymise(rows: pd.DataFrame, basins: pd.DataFrame,
               terminations: pd.DataFrame | None) -> pd.DataFrame:
-    expected = {"basin_id", "lat", "lon", "lat_min", "lat_max", "lon_min", "lon_max", "raw_region"}
+    expected = {"basin_id", "lat", "lon", "raw_region"}
     if not expected <= set(basins):
         raise ValueError("CHSL-v1 basin geometry requires explicit identifiers and bounding boxes")
     if basins["raw_region"].duplicated().any():
         raise ValueError("CHSL-v1 ambiguous geographic identity mapping")
     if not basins["basin_id"].astype(str).str.fullmatch(r"BASIN_\d{2,}").all():
         raise ValueError("CHSL-v1 invalid basin names")
+    basins = basins.copy()
+    info = basins.apply(geometry_definition, axis=1)
+    for key in ("rj_id", "rj_kind", "rj_geometry_hash", "rj_radius_km", "grid_data_kind"):
+        basins[key] = info.map(lambda record: record[1][key])
+    if "admin_population_scope" not in basins:
+        basins["admin_population_scope"] = "unknown"
+    scope = {"rj_exact": "matched", "jurisdiction": "unmatched", "unknown": "unknown"}
+    if not basins["admin_population_scope"].isin(scope).all():
+        raise ValueError("CHSL-v1 invalid reviewed administrative coverage classification")
+    basins["b_admin_boundary_scope"] = basins["admin_population_scope"].map(scope)
     merged = rows.merge(basins, on="raw_region", validate="many_to_one")
     if len(merged) != len(rows):
         raise ValueError("CHSL-v1 raw geography lacks a reviewed basin assignment")
@@ -186,6 +197,10 @@ def anonymise(rows: pd.DataFrame, basins: pd.DataFrame,
             )
         result.append(record)
     output = pd.DataFrame(result)
+    columns = ["basin_id", "rj_id", "rj_kind", "rj_geometry_hash",
+               "rj_radius_km", "grid_data_kind", "b_admin_boundary_scope"]
+    output = output.merge(basins[columns].drop_duplicates("basin_id"),
+                          on="basin_id", validate="many_to_one")
     if output.duplicated(["n0_id", "t_start", "t_end"]).any():
         raise ValueError("CHSL-v1 repeated configuration interval")
     return output

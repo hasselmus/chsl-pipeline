@@ -37,11 +37,24 @@ def build_vectors(df: pd.DataFrame, forcing: pd.DataFrame | None = None,
         df = df.merge(forcing[["basin_id", "t_obs"] + [x for x in EXOGENOUS if x in forcing]],
                       how="left", on=["basin_id", "t_obs"], validate="many_to_one")
     if regional is not None:
+        required = {"basin_id", "t_obs", "rj_id", "rj_kind", "rj_geometry_hash", "grid_data_kind"}
+        if not required.issubset(regional):
+            raise ValueError("CHSL-v1 regional input requires audited gridded spatial identifiers")
+        if not regional["grid_data_kind"].eq("gridded_cells").all():
+            raise ValueError("CHSL-v1 refuses non-gridded regional observations")
+        mapping = df[["basin_id", "rj_id", "rj_geometry_hash"]].drop_duplicates("basin_id")
+        checked = regional[["basin_id", "rj_id", "rj_geometry_hash"]].drop_duplicates().merge(
+            mapping, on="basin_id", how="left", suffixes=("_grid", "_institutional"),
+            validate="many_to_one")
+        if checked["rj_id_institutional"].isna().any() or (
+            checked["rj_id_grid"] != checked["rj_id_institutional"]).any() or (
+            checked["rj_geometry_hash_grid"] != checked["rj_geometry_hash_institutional"]).any():
+            raise ValueError("CHSL-v1 mismatched R_j geometry; no population/land-use join")
         if regional.duplicated(["basin_id", "t_obs"]).any():
             raise ValueError("CHSL-v1 regional grid contains duplicate region-time cells")
         keys = [x for x in regional if x in REGIONAL or any(
             x == f"{r}_{suffix}" for r in REGIONAL
-            for suffix in ("low", "high", "disputed_flag"))]
+            for suffix in ("low", "high", "disputed_flag", "grid_cells"))]
         df = df.merge(regional[["basin_id", "t_obs"] + keys],
                       how="left", on=["basin_id", "t_obs"], validate="many_to_one")
     for field in EXOGENOUS + REGIONAL:
@@ -70,9 +83,12 @@ def build_vectors(df: pd.DataFrame, forcing: pd.DataFrame | None = None,
                              on=["basin_id", "t_obs"], how="left", indicator=True)
         missing = missing[missing["_merge"] == "left_only"]
         if not missing.empty:
-            positions = df[["basin_id", "lat", "lon"]].drop_duplicates("basin_id")
+            positions = df[["basin_id", "lat", "lon", "rj_id", "rj_kind",
+                            "rj_geometry_hash", "rj_radius_km", "grid_data_kind"
+                            ]].drop_duplicates("basin_id")
             extra = missing[["basin_id", "t_obs"]].merge(positions, on="basin_id", validate="many_to_one")
             extra["observation_scope"] = "regional"
+            extra["b_admin_boundary_scope"] = "not_applicable"
             extra["n0_id"] = None
             extra["n0_start_yr"] = np.nan
             extra["n0_start_estimated_flag"] = False
@@ -117,4 +133,6 @@ def sample_compatible_states(df: pd.DataFrame, rng: np.random.Generator,
         out[index] = matrix.mean(axis=1).where(count >= np.ceil(len(names) * coverage_required))
     for name in EXOGENOUS + REGIONAL:
         out[name] = pd.to_numeric(df.get(name), errors="coerce")
+    out["b_admin_boundary_scope"] = df["b_admin_boundary_scope"].to_numpy()
+    out["rj_id"] = df["rj_id"].to_numpy()
     return out

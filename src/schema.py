@@ -21,12 +21,14 @@ EXOGENOUS = (
     "u_coverage_years", "u_shock_events_50yr", "u_t_recur_proxy"
 )
 REGIONAL = (
-    "b_regional_hyde_pop", "m_cropland_km2", "m_grazing_km2"
+    "b_regional_grid_pop", "m_cropland_km2", "m_grazing_km2"
 )
 BASE = (
     "chsl_version", "basin_id", "lat", "lon", "n0_id", "observation_scope",
     "n0_start_yr", "n0_start_estimated_flag", "t_obs", "t_start", "t_end",
-    "sigma_low", "sigma_high", "event_observed", "source_refs"
+    "sigma_low", "sigma_high", "event_observed", "source_refs",
+    "rj_id", "rj_kind", "rj_geometry_hash", "rj_radius_km",
+    "b_admin_boundary_scope", "grid_data_kind"
 )
 POP_ALIASES = ("b_admin_pop_min", "b_admin_pop_max", "b_urban_max_min", "b_urban_max_max")
 DERIVED = (
@@ -38,7 +40,7 @@ EXTRA = tuple(
     for suffix in ("low", "high", "disputed_flag")
 )
 ALLOWLIST = frozenset(BASE + EXOGENOUS + REGIONAL + DERIVED + POP_ALIASES + EXTRA + tuple(
-    f"{name}_{suffix}" for name in REGIONAL for suffix in ("low", "high", "disputed_flag")
+    f"{name}_{suffix}" for name in REGIONAL for suffix in ("low", "high", "disputed_flag", "grid_cells")
 ))
 
 def assert_contract(df: pd.DataFrame) -> None:
@@ -59,6 +61,16 @@ def assert_contract(df: pd.DataFrame) -> None:
         raise ValueError("CHSL-v1 invalid configuration key")
     if df.loc[~inst, "n0_id"].notna().any():
         raise ValueError("CHSL-v1 regional-only row has an institutional identity")
+    if not df["b_admin_boundary_scope"].isin(("matched", "unmatched", "unknown", "not_applicable")).all():
+        raise ValueError("CHSL-v1 invalid administrative geographic coverage")
+    if not df["rj_id"].astype(str).str.fullmatch(r"R_BASIN_\d{2,}").all():
+        raise ValueError("CHSL-v1 invalid geographic boundary key")
+    if not df["rj_kind"].isin(("box", "centroid_buffer", "polygon")).all():
+        raise ValueError("CHSL-v1 invalid geographic boundary shape")
+    if not df["rj_geometry_hash"].astype(str).str.fullmatch(r"[0-9a-f]{20}").all():
+        raise ValueError("CHSL-v1 invalid geometry digest")
+    if not df["grid_data_kind"].eq("gridded_cells").all():
+        raise ValueError("CHSL-v1 does not admit ungridded regional sources")
     if (pd.to_numeric(df["t_start"]) > pd.to_numeric(df["t_end"])).any():
         raise ValueError("CHSL-v1 reversed observation interval")
     for name in BOUNDED + DERIVED + REGIONAL:
